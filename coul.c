@@ -759,6 +759,7 @@ void recover(FILE *rfp2) {
     // checked, next row make possible update FMT 
     //if programm run on Windows && bat when exists 'for' by code bat.
     fflush(rfp2);
+
     if (improve_max && seen_best && mpz_cmp(best, max) < 0)
         mpz_set(max, best);
     if (last305)
@@ -2940,7 +2941,7 @@ int main(int argc, char **argv, char **envp) {
     init_post(rfp);
     report_init(stdout, argv[0]);
     if (rfp) {
-       report_init(rfp, argv[0]);
+      report_init(rfp, argv[0]);
        if (freopen(rpath, "a+", rfp) == NULL)
           fail("could not reopen %s: %s", rpath, strerror(errno));
        setvbuf(rfp, NULL, 0, _IOLBF);
