@@ -213,7 +213,6 @@ ulong antigain = 0;
  * When midp is in use, we save maxp in orig_maxp, and overwrite it.
  */
 uint minp = 0, maxp = 0, orig_maxp, midp = 0;
-bool midp_only = 0;
 struct {
     ulong p;
     uint vi;
@@ -318,6 +317,9 @@ void report(char *format, ...) {
         gmp_vfprintf(rfp, format, ap);
         va_end(ap);
         fflush(rfp);
+        t0 = utime(); 
+        /* need for exclude '381116.91s' runtime problem on long task
+           OR go around when this value in logs file too...          */
     }
 }
 
@@ -699,14 +701,14 @@ void parse_305(char *s) {
     t0 -= dtime;
 }
 
-void recover(void) {
+void recover(FILE *rfp2) {
     char *last305 = NULL;
     char *curbuf = NULL;
     size_t len = 120, len305 = 0, len202 = 0;
 
-    fseek(rfp, 0L, SEEK_SET);
+    fseek(rfp2, 0L, SEEK_SET);
     while (1) {
-        ssize_t nread = getline(&curbuf, &len, rfp);
+        ssize_t nread = getline(&curbuf, &len, rfp2);
         if (nread < 0) {
             if (errno == 0)
                 break;
@@ -715,14 +717,14 @@ void recover(void) {
         if (curbuf[nread - 1] != '\n'
                 || memchr(curbuf, 0, nread) != NULL) {
             /* corrupt line, file should be truncated */
-            off_t offset = ftello(rfp);
+            off_t offset = ftello(rfp2);
             if (offset == -1)
                 fail("could not ask offset: %s", strerror(errno));
-            if (ftruncate(fileno(rfp), offset - nread) != 0)
+            if (ftruncate(fileno(rfp2), offset - nread) != 0)
                 fail("could not truncate %s to %lu: %s", rpath, offset - nread,
                         strerror(errno));
-            if (freopen(NULL, "a+", rfp) == NULL)
-                fail("could not reopen %s: %s", rpath, strerror(errno));
+            //if (freopen(NULL, "a+", rfp) == NULL)
+            //    fail("could not reopen %s: %s", rpath, strerror(errno));
             break;
         }
         if (strncmp("305 ", curbuf, 4) == 0) {
@@ -752,7 +754,10 @@ void recover(void) {
         else
             fail("unexpected log line %.3s in %s", curbuf, rpath);
     }
-    fseek(rfp, 0L, SEEK_END);
+    fseek(rfp2, 0L, SEEK_END);
+    // checked, next row make possible update FMT 
+    //if programm run on Windows && bat when exists 'for' by code bat.
+    fflush(rfp2);
     if (improve_max && seen_best && mpz_cmp(best, max) < 0)
         mpz_set(max, best);
     if (last305)
@@ -939,7 +944,7 @@ void prep_forcep(void) {
     }
 }
 
-void init_post(void) {
+void init_post(FILE *rfp2) {
     init_tau(rough);
     alloc_taum(k);
     if (randseed != 1) {
@@ -950,13 +955,13 @@ void init_post(void) {
         clear_randstate();
         init_randstate(randseed);
     }
-    if (rpath) {
-        printf("path %s\n", rpath);
+    if (rfp2) {
+        /*printf("path %s\n", rpath);
         rfp = fopen(rpath, "a+");
         if (rfp == NULL)
             fail("%s: %s", rpath, strerror(errno));
-        setlinebuf(rfp);
-        recover();
+        setlinebuf(rfp);*/
+        recover(rfp2);
     }
 #ifdef HAVE_SETPROCTITLE
     setproctitle("oul(%lu %lu)", n, k);
@@ -1025,10 +1030,8 @@ void report_init(FILE *fp, char *prog) {
         if (maxp)
             fprintf(fp, "%u", (midp && midp == maxp) ? orig_maxp : maxp);
     }
-    if (midp) {
-        char *ww = midp_only ? "W" : "";
-        fprintf(fp, " -W%s%u", ww, midp);
-    }
+    if (midp)
+        fprintf(fp, " -W%u", midp);
     if (force_all)
         fprintf(fp, " -f%u", force_all);
     if (gain > 1 || antigain > 1) {
@@ -2013,7 +2016,7 @@ bool apply_batch(t_level *prev, t_level *cur, t_forcep *fp, uint bi) {
                 walk_midp(cur, 0);
                 --level;
             }
-            return midp_only ? 0 : 1;
+            return 1;
         }
         if (opt_batch_min < 0)
             disp_batch(cur);
@@ -2695,8 +2698,6 @@ void recurse(e_is jump_continue) {
         /* finish the walk_midp call */
         cur_level = &levels[level - 1];
         walk_midp(cur_level, 1);
-        if (midp_only)
-            return;
     }
     /* else jump_continue == IS_DEEPER */
 
@@ -2882,14 +2883,9 @@ int main(int argc, char **argv, char **envp) {
             set_gain(&arg[2]);
         else if (arg[1] == 'p')
             set_cap(&arg[2]);
-        else if (arg[1] == 'W') {
-            char *w = &arg[2];
-            if (*w == 'W') {
-                midp_only = 1;
-                ++w;
-            }
-            midp = ulston(w);
-        } else if (arg[1] == 'r') {
+        else if (arg[1] == 'W')
+            midp = ulston(&arg[2]);
+        else if (arg[1] == 'r') {
             rpath = (char *)malloc(strlen(&arg[2]) + 1);
             strcpy(rpath, &arg[2]);
         } else if (arg[1] == 'f')
@@ -2924,9 +2920,22 @@ int main(int argc, char **argv, char **envp) {
     if (force_all > k)
         fail("require force_all <= k");
 
-    init_post();
+    if (rpath) {
+        printf("path %s\n", rpath);
+        rfp = fopen(rpath, "a+");
+        if (rfp == NULL)
+            fail("%s: %s", rpath, strerror(errno));
+        setvbuf(rfp, NULL, 0, _IOLBF);
+    }
+    init_post(rfp);
     report_init(stdout, argv[0]);
-    if (rfp) report_init(rfp, argv[0]);
+    if (rfp) {
+       report_init(rfp, argv[0]);
+       if (freopen(rpath, "a+", rfp) == NULL)
+          fail("could not reopen %s: %s", rpath, strerror(errno));
+       setvbuf(rfp, NULL, 0, _IOLBF);
+    }
+
 #if 0
     char s[] = "7^2 2.71^2 3^8 2^2.5^2 11^2.29^2 (0.00s)\n";
     parse_305(s);
