@@ -1,0 +1,22 @@
+all:
+	cat Makefile
+ex1:
+	gcc -o ex1.exe example-file-classic.c
+ex2:
+	gcc -o ex2.exe example-file-classic-2.c
+ex3:
+	gcc -o ex3.exe example-file-classic-3.c
+ex4:
+	gcc -o ex4.exe example-file-classic-4.c
+#ex5:
+#	gcc -o ex5.exe example-file-classic-5.c
+ex5-1:
+	gcc -o ex5-1.exe example-file-classic-5-1.c
+ex5-2:
+	gcc -o ex5-2.exe example-file-classic-5-2.c
+ex5-3:
+	gcc -o ex5-3.exe example-file-classic-5-3.c
+ex5-4:
+	gcc -o ex5-4.exe example-file-classic-5-4.c
+exmy:
+	gcc -o ex6-my.exe example-file-my-version.c
